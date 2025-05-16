@@ -1,6 +1,36 @@
-# FilmStream Alkalmazás
+# Film Feltöltő Platform
 
-Egy egyszerű film feltöltő és kezelő alkalmazás, ahol a felhasználók filmeket tölthetnek fel, böngészhetnek és törölhetnek.
+## Telepítés
+
+1. Klónozd le a repository-t:
+```bash
+git clone [repository-url]
+cd [repository-name]
+```
+
+2. Telepítsd a függőségeket:
+```bash
+npm install
+```
+
+3. Indítsd el a szervert:
+```bash
+cd backend
+npm start
+```
+
+4. Indítsd el a frontend-et:
+```bash
+cd ..
+npm run dev
+```
+
+## Használat
+
+1. Nyisd meg a böngészőben: http://localhost:5173
+2. Regisztrálj egy felhasználót (az első regisztrált felhasználó admin lesz)
+3. Jelentkezz be
+4. Kezdj el filmeket feltölteni!
 
 ## Előfeltételek
 
@@ -8,24 +38,15 @@ Egy egyszerű film feltöltő és kezelő alkalmazás, ahol a felhasználók fil
 - MySQL szerver
 - npm vagy yarn
 
-## Telepítés
+## Funkciók
 
-1. Klónozd le a repository-t:
-```bash
-git clone <repository-url>
-cd <repository-name>
-```
-
-2. Telepítsd a függőségeket mind a frontend, mind a backend részhez:
-```bash
-# Frontend függőségek telepítése
-cd vite-project
-npm install
-
-# Backend függőségek telepítése és adatbázis inicializálása
-cd backend
-npm run setup
-```
+- Filmek feltöltése címmel, leírással, hosszal és kategóriával
+- Borítókép és videófájl feltöltése
+- Filmek listázása
+- Keresés cím és leírás alapján
+- Szűrés kategória szerint
+- Filmek törlése
+- Felhasználói jogosultságok (admin, moderátor, felhasználó)
 
 ## Konfiguráció
 
@@ -42,31 +63,6 @@ Ha módosítani szeretnéd ezeket a beállításokat, a következő fájlokat ke
 - Backend MySQL kapcsolat: `backend/index.js`
 - Backend port: `backend/index.js`
 - Frontend API URL: `vite-project/src/main.js`
-
-## Futtatás
-
-1. Indítsd el a backend szervert:
-```bash
-cd backend
-npm start
-```
-
-2. Új terminál ablakban indítsd el a frontend fejlesztői szervert:
-```bash
-cd vite-project
-npm run dev
-```
-
-3. Nyisd meg a böngészőben: http://localhost:5173
-
-## Funkciók
-
-- Filmek feltöltése címmel, leírással, hosszal és kategóriával
-- Borítókép és videófájl feltöltése
-- Filmek listázása
-- Keresés cím és leírás alapján
-- Szűrés kategória szerint
-- Filmek törlése
 
 ## Mappák létrehozása
 

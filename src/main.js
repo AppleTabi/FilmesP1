@@ -1,4 +1,8 @@
 const apiUrl = 'http://localhost:3000';
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+
+let currentUser = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById("filmForm");
@@ -7,6 +11,119 @@ document.addEventListener('DOMContentLoaded', () => {
   const showFormBtn = document.getElementById("showFormBtn");
   const searchInput = document.getElementById("searchInput");
   const categoryFilter = document.getElementById("categoryFilter");
+  const imageInput = form.querySelector('input[name="image"]');
+  const videoInput = form.querySelector('input[name="video"]');
+  const loginBtn = document.getElementById("loginBtn");
+  const registerBtn = document.getElementById("registerBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const loginForm = document.getElementById("loginForm");
+  const registerForm = document.getElementById("registerForm");
+
+  const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+  const registerModal = new bootstrap.Modal(document.getElementById('registerModal'));
+
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  currentUser = null;
+  updateUI();
+
+  loginBtn.addEventListener('click', () => {
+    loginModal.show();
+  });
+
+  registerBtn.addEventListener('click', () => {
+    registerModal.show();
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    currentUser = null;
+    updateUI();
+    loadFilms();
+  });
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(loginForm);
+    try {
+      const response = await fetch(`${apiUrl}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.get('email'),
+          password: formData.get('password'),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error);
+      }
+
+      const data = await response.json();
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      handleLogin(data.user);
+      loginModal.hide();
+      loginForm.reset();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(registerForm);
+    try {
+      const response = await fetch(`${apiUrl}/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.get('name'),
+          email: formData.get('email'),
+          password: formData.get('password'),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error);
+      }
+
+      const data = await response.json();
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      handleLogin(data.user);
+      registerModal.hide();
+      registerForm.reset();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  function handleLogin(user) {
+    currentUser = user;
+    updateUI();
+  }
+
+  function updateUI() {
+    if (currentUser) {
+      loginBtn.style.display = 'none';
+      registerBtn.style.display = 'none';
+      showFormBtn.style.display = 'block';
+      logoutBtn.style.display = 'block';
+    } else {
+      loginBtn.style.display = 'block';
+      registerBtn.style.display = 'block';
+      showFormBtn.style.display = 'none';
+      logoutBtn.style.display = 'none';
+    }
+  }
 
   let allFilms = [];
   let filteredFilms = [];
@@ -17,6 +134,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   searchInput.addEventListener("input", filterFilms);
   categoryFilter.addEventListener("change", filterFilms);
+
+  imageInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > MAX_IMAGE_SIZE) {
+        alert('A képfájl mérete nem lehet nagyobb mint 5MB!');
+        e.target.value = '';
+      }
+      if (!file.type.startsWith('image/')) {
+        alert('Csak képfájlokat lehet feltölteni!');
+        e.target.value = '';
+      }
+    }
+  });
+
+  videoInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > MAX_VIDEO_SIZE) {
+        alert('A videófájl mérete nem lehet nagyobb mint 100MB!');
+        e.target.value = '';
+      }
+      if (!file.type.startsWith('video/')) {
+        alert('Csak videófájlokat lehet feltölteni!');
+        e.target.value = '';
+      }
+    }
+  });
 
   function filterFilms() {
     const searchTerm = searchInput.value.toLowerCase();
@@ -80,7 +225,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
         try {
           const response = await fetch(`http://localhost:3000/films/${film.id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
           });
           
           if (response.ok) {
@@ -102,11 +250,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const formData = new FormData(form);
 
     try {
-      const response = await fetch("http://localhost:3000/films", {
+      const response = await fetch(`${apiUrl}/films`, {
         method: "POST",
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: formData,
       });
-      if (!response.ok) throw new Error("Hiba történt");
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Hiba történt");
+      }
+      
       form.reset();
       formContainer.style.display = "none";
       loadFilms();
