@@ -24,10 +24,32 @@ document.addEventListener('DOMContentLoaded', () => {
               <video controls class="mt-2">
                 <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
               </video>` : ''}
+            <button class="delete-btn" data-id="${film.id}">Törlés</button>
           </div>
         </div>
       `;
       filmList.appendChild(card);
+
+      // Add delete event listener
+      const deleteBtn = card.querySelector('.delete-btn');
+      deleteBtn.addEventListener('click', async () => {
+        if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
+          try {
+            const response = await fetch(`http://localhost:3000/films/${film.id}`, {
+              method: 'DELETE'
+            });
+            
+            if (response.ok) {
+              fetchFilms(); // Refresh the list after successful deletion
+            } else {
+              alert('Hiba történt a film törlésekor.');
+            }
+          } catch (error) {
+            console.error('Hiba:', error);
+            alert('Hiba történt a film törlésekor.');
+          }
+        }
+      });
     });
   }
 
@@ -49,17 +71,43 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchFilms();
 });
 
-
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("filmForm");
   const filmList = document.getElementById("filmList");
   const formContainer = document.getElementById("formContainer");
   const showFormBtn = document.getElementById("showFormBtn");
+  const searchInput = document.getElementById("searchInput");
+  const categoryFilter = document.getElementById("categoryFilter");
 
+  let allFilms = []; // Az összes film tárolása
+  let filteredFilms = []; // A szűrt filmek tárolása
+
+  // Form megjelenítése/elrejtése
   showFormBtn.addEventListener("click", () => {
     formContainer.style.display = formContainer.style.display === "none" ? "block" : "none";
   });
 
+  // Keresés és kategória szűrés eseménykezelők
+  searchInput.addEventListener("input", filterFilms);
+  categoryFilter.addEventListener("change", filterFilms);
+
+  // Szűrési logika
+  function filterFilms() {
+    const searchTerm = searchInput.value.toLowerCase();
+    const selectedCategory = categoryFilter.value;
+
+    filteredFilms = allFilms.filter(film => {
+      const matchesSearch = film.title.toLowerCase().includes(searchTerm) ||
+                          film.description.toLowerCase().includes(searchTerm);
+      const matchesCategory = !selectedCategory || film.category === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
+    });
+
+    renderFilms(filteredFilms);
+  }
+
+  // Film feltöltése
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const formData = new FormData(form);
@@ -78,38 +126,74 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Filmek betöltése
   async function loadFilms() {
     try {
       const res = await fetch("http://localhost:3000/films");
-      const films = await res.json();
-      filmList.innerHTML = "";
-
-      films.forEach((film) => {
-        const col = document.createElement("div");
-        col.className = "col-md-4";
-
-        col.innerHTML = `
-          <div class="card">
-            <img src="http://localhost:3000/uploads/images/${film.image}" class="card-img-top" alt="${film.title}">
-            <div class="card-body">
-              <h5 class="card-title">${film.title}</h5>
-              <p class="card-text">${film.description}</p>
-              <p><strong>Kategória:</strong> ${film.category} | <strong>Hossz:</strong> ${film.time} perc</p>
-              <video controls width="100%" height="200" src="http://localhost:3000/uploads/videos/${film.video}"></video>
-            </div>
-          </div>
-        `;
-        filmList.appendChild(col);
-      });
+      allFilms = await res.json();
+      filterFilms(); // Alkalmazza az aktuális szűrőket
     } catch (err) {
       console.error("Hiba filmek betöltésekor:", err);
+      filmList.innerHTML = '<div class="col-12"><p class="text-center text-white">Hiba történt a filmek betöltésekor.</p></div>';
     }
   }
 
+  // Filmek megjelenítése
+  function renderFilms(films) {
+    filmList.innerHTML = "";
+
+    if (films.length === 0) {
+      filmList.innerHTML = '<div class="col-12"><p class="text-center text-white">Nincs találat a keresési feltételeknek megfelelően.</p></div>';
+      return;
+    }
+
+    films.forEach((film) => {
+      const col = document.createElement("div");
+      col.className = "col-md-4 mb-4";
+
+      col.innerHTML = `
+        <div class="card h-100 text-white">
+          <img src="http://localhost:3000/uploads/images/${film.image}" class="card-img-top" alt="${film.title}">
+          <div class="card-body d-flex flex-column">
+            <h5 class="card-title">${film.title}</h5>
+            <p class="card-text">${film.description}</p>
+            <p class="card-text"><small>Kategória: ${film.category} | Hossz: ${film.time} perc</small></p>
+            ${film.video ? `
+              <video controls class="mt-2 mb-3">
+                <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
+              </video>` : ''}
+            <button class="delete-btn" data-id="${film.id}">🗑️ Törlés</button>
+          </div>
+        </div>
+      `;
+      filmList.appendChild(col);
+
+      // Törlés gomb eseménykezelő
+      const deleteBtn = col.querySelector('.delete-btn');
+      deleteBtn.addEventListener('click', async () => {
+        if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
+          try {
+            const response = await fetch(`http://localhost:3000/films/${film.id}`, {
+              method: 'DELETE'
+            });
+            
+            if (response.ok) {
+              loadFilms(); // Lista frissítése sikeres törlés után
+            } else {
+              alert('Hiba történt a film törlésekor.');
+            }
+          } catch (error) {
+            console.error('Hiba:', error);
+            alert('Hiba történt a film törlésekor.');
+          }
+        }
+      });
+    });
+  }
+
+  // Kezdeti betöltés
   loadFilms();
 });
-
-
 
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("uploadForm");
@@ -183,6 +267,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   fetchFilms();
 });
-
 
 loadFilms();

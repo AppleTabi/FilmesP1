@@ -32,15 +32,15 @@
         <div class="mb-3">
           <label for="category" class="form-label">Kategória</label>
           <select class="form-select" id="category" name="category" required>
-          <option value="" disabled selected>Válassz kategóriát</option>
-          <option value="Akció">Akció</option>
-          <option value="Vígjáték">Vígjáték</option>
-          <option value="Dráma">Dráma</option>
-          <option value="Sci-Fi">Sci-Fi</option>
-          <option value="Fantasy">Fantasy</option>
-          <option value="Horror">Horror</option>
-          <option value="Romantikus">Romantikus</option>
-    </select>
+            <option value="" disabled selected>Válassz kategóriát</option>
+            <option value="Akció">Akció</option>
+            <option value="Vígjáték">Vígjáték</option>
+            <option value="Dráma">Dráma</option>
+            <option value="Sci-Fi">Sci-Fi</option>
+            <option value="Fantasy">Fantasy</option>
+            <option value="Horror">Horror</option>
+            <option value="Romantikus">Romantikus</option>
+          </select>
         </div>
         <div class="mb-3">
           <label class="form-label">Borítókép</label>
@@ -56,6 +56,23 @@
   </div>
 
   <div class="container mt-5">
+    <div class="row mb-4">
+      <div class="col-md-6">
+        <input type="text" id="searchInput" class="form-control" placeholder="Keresés cím vagy leírás alapján...">
+      </div>
+      <div class="col-md-6">
+        <select class="form-select" id="categoryFilter">
+          <option value="">Összes kategória</option>
+          <option value="Akció">Akció</option>
+          <option value="Vígjáték">Vígjáték</option>
+          <option value="Dráma">Dráma</option>
+          <option value="Sci-Fi">Sci-Fi</option>
+          <option value="Fantasy">Fantasy</option>
+          <option value="Horror">Horror</option>
+          <option value="Romantikus">Romantikus</option>
+        </select>
+      </div>
+    </div>
     <h2 class="text-white mb-4">Filmek</h2>
     <div class="row" id="filmList"></div>
   </div>
