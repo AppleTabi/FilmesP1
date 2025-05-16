@@ -1,76 +1,6 @@
 const apiUrl = 'http://localhost:3000';
 
 document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('uploadForm');
-  const filmList = document.getElementById('filmList');
-
-  async function fetchFilms() {
-    const res = await fetch('http://localhost:3000/films');
-    const films = await res.json();
-
-    filmList.innerHTML = '';
-
-    films.forEach(film => {
-      const card = document.createElement('div');
-      card.className = 'col-md-4 mb-4';
-      card.innerHTML = `
-        <div class="card h-100 text-white">
-          <img src="http://localhost:3000/uploads/images/${film.image}" class="card-img-top" alt="${film.title}">
-          <div class="card-body d-flex flex-column">
-            <h5 class="card-title">${film.title}</h5>
-            <p class="card-text">${film.description}</p>
-            <p class="card-text"><small>Kategória: ${film.category} | Hossz: ${film.time} perc</small></p>
-            ${film.video ? `
-              <video controls class="mt-2">
-                <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
-              </video>` : ''}
-            <button class="delete-btn" data-id="${film.id}">Törlés</button>
-          </div>
-        </div>
-      `;
-      filmList.appendChild(card);
-
-      const deleteBtn = card.querySelector('.delete-btn');
-      deleteBtn.addEventListener('click', async () => {
-        if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
-          try {
-            const response = await fetch(`http://localhost:3000/films/${film.id}`, {
-              method: 'DELETE'
-            });
-            
-            if (response.ok) {
-              fetchFilms();
-            } else {
-              alert('Hiba történt a film törlésekor.');
-            }
-          } catch (error) {
-            console.error('Hiba:', error);
-            alert('Hiba történt a film törlésekor.');
-          }
-        }
-      });
-    });
-  }
-
-  form.addEventListener('submit', async e => {
-    e.preventDefault();
-    const formData = new FormData(form);
-    const res = await fetch('http://localhost:3000/films', {
-      method: 'POST',
-      body: formData
-    });
-    if (res.ok) {
-      form.reset();
-      fetchFilms();
-    } else {
-      alert('Hiba történt a feltöltés során.');
-    }
-  });
-
-  fetchFilms();
-});
-
-document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("filmForm");
   const filmList = document.getElementById("filmList");
   const formContainer = document.getElementById("formContainer");
@@ -101,6 +31,70 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     renderFilms(filteredFilms);
+  }
+
+  function showFilmDetails(film) {
+    const modalHtml = `
+      <div class="modal fade" id="filmModal${film.id}" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-secondary">
+              <h5 class="modal-title">${film.title}</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="row">
+                <div class="col-md-6">
+                  <img src="http://localhost:3000/uploads/images/${film.image}" class="img-fluid rounded" alt="${film.title}">
+                </div>
+                <div class="col-md-6">
+                  <p class="mb-3">${film.description}</p>
+                  <p><strong>Kategória:</strong> ${film.category}</p>
+                  <p><strong>Hossz:</strong> ${film.time} perc</p>
+                </div>
+              </div>
+              ${film.video ? `
+                <div class="mt-4">
+                  <video controls class="w-100">
+                    <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
+                  </video>
+                </div>` : ''}
+              <div class="text-end mt-3">
+                <button class="delete-btn" data-id="${film.id}">🗑️ Törlés</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (!document.querySelector(`#filmModal${film.id}`)) {
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    const modal = new bootstrap.Modal(document.querySelector(`#filmModal${film.id}`));
+    modal.show();
+
+    const deleteBtn = document.querySelector(`#filmModal${film.id} .delete-btn`);
+    deleteBtn.addEventListener('click', async () => {
+      if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
+        try {
+          const response = await fetch(`http://localhost:3000/films/${film.id}`, {
+            method: 'DELETE'
+          });
+          
+          if (response.ok) {
+            modal.hide();
+            loadFilms();
+          } else {
+            alert('Hiba történt a film törlésekor.');
+          }
+        } catch (error) {
+          console.error('Hiba:', error);
+          alert('Hiba történt a film törlésekor.');
+        }
+      }
+    });
   }
 
   form.addEventListener("submit", async (e) => {
@@ -142,121 +136,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     films.forEach((film) => {
       const col = document.createElement("div");
-      col.className = "col-md-4 mb-4";
+      col.className = "col-md-3 mb-4";
 
       col.innerHTML = `
-        <div class="card h-100 text-white">
+        <div class="card h-100 text-white film-card" role="button">
           <img src="http://localhost:3000/uploads/images/${film.image}" class="card-img-top" alt="${film.title}">
-          <div class="card-body d-flex flex-column">
-            <h5 class="card-title">${film.title}</h5>
-            <p class="card-text">${film.description}</p>
-            <p class="card-text"><small>Kategória: ${film.category} | Hossz: ${film.time} perc</small></p>
-            ${film.video ? `
-              <video controls class="mt-2 mb-3">
-                <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
-              </video>` : ''}
-            <button class="delete-btn" data-id="${film.id}">🗑️ Törlés</button>
+          <div class="card-body">
+            <h5 class="card-title text-center">${film.title}</h5>
           </div>
         </div>
       `;
-      filmList.appendChild(col);
 
-      const deleteBtn = col.querySelector('.delete-btn');
-      deleteBtn.addEventListener('click', async () => {
-        if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
-          try {
-            const response = await fetch(`http://localhost:3000/films/${film.id}`, {
-              method: 'DELETE'
-            });
-            
-            if (response.ok) {
-              loadFilms();
-            } else {
-              alert('Hiba történt a film törlésekor.');
-            }
-          } catch (error) {
-            console.error('Hiba:', error);
-            alert('Hiba történt a film törlésekor.');
-          }
-        }
-      });
+      col.querySelector('.film-card').addEventListener('click', () => showFilmDetails(film));
+      filmList.appendChild(col);
     });
   }
 
   loadFilms();
 });
-
-document.addEventListener("DOMContentLoaded", () => {
-  const form = document.getElementById("uploadForm");
-  const showFormBtn = document.getElementById("showFormBtn");
-  const filmsContainer = document.getElementById("filmsContainer");
-
-  showFormBtn.addEventListener("click", () => {
-    form.style.display = form.style.display === "none" ? "block" : "none";
-  });
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const formData = new FormData(form);
-
-    const response = await fetch("http://localhost:3000/films", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (response.ok) {
-      alert("Film sikeresen feltöltve!");
-      form.reset();
-      form.style.display = "none";
-      fetchFilms();
-    } else {
-      alert("Hiba történt a feltöltés során.");
-    }
-  });
-
-  async function fetchFilms() {
-    const res = await fetch("http://localhost:3000/films");
-    const films = await res.json();
-
-    filmsContainer.innerHTML = "";
-    films.forEach(film => {
-      const col = document.createElement("div");
-      col.className = "col-md-4 mb-4";
-
-      col.innerHTML = `
-        <div class="card h-100 bg-secondary text-light shadow">
-          <img src="http://localhost:3000/uploads/${film.image}" class="card-img-top" alt="${film.title}">
-          <div class="card-body d-flex flex-column">
-            <h5 class="card-title">${film.title}</h5>
-            <p class="card-text">${film.description || ''}</p>
-            <p class="card-text"><small class="text-muted">Kategória: ${film.category}</small></p>
-            <p class="card-text"><small class="text-muted">Hossz: ${film.time} perc</small></p>
-            <video src="http://localhost:3000/uploads/${film.video}" class="w-100 mt-2" controls></video>
-            <button class="btn btn-danger mt-3 delete-btn" data-id="${film.id}">🗑 Törlés</button>
-          </div>
-        </div>
-      `;
-      filmsContainer.appendChild(col);
-    });
-
-    setTimeout(() => {
-      document.querySelectorAll(".delete-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const id = btn.getAttribute("data-id");
-          if (confirm("Biztosan törlöd ezt a filmet?")) {
-            const del = await fetch(`http://localhost:3000/films/${id}`, { method: "DELETE" });
-            if (del.ok) {
-              fetchFilms();
-            } else {
-              alert("Hiba a törlés során.");
-            }
-          }
-        });
-      });
-    }, 100);
-  }
-
-  fetchFilms();
-});
-
-loadFilms();
