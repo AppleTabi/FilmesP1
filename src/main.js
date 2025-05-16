@@ -18,13 +18,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const logoutBtn = document.getElementById("logoutBtn");
   const loginForm = document.getElementById("loginForm");
   const registerForm = document.getElementById("registerForm");
+  const adminPanelBtn = document.getElementById("adminPanelBtn");
 
   const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
   const registerModal = new bootstrap.Modal(document.getElementById('registerModal'));
+  const adminModal = new bootstrap.Modal(document.getElementById('adminModal'));
 
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
-  currentUser = null;
+  const savedUser = localStorage.getItem('user');
+  if (savedUser) {
+    currentUser = JSON.parse(savedUser);
+  }
   updateUI();
 
   loginBtn.addEventListener('click', () => {
@@ -41,6 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
     currentUser = null;
     updateUI();
     loadFilms();
+  });
+
+  adminPanelBtn?.addEventListener('click', () => {
+    loadAdminDashboard();
+    adminModal.show();
   });
 
   loginForm.addEventListener('submit', async (e) => {
@@ -117,11 +125,17 @@ document.addEventListener('DOMContentLoaded', () => {
       registerBtn.style.display = 'none';
       showFormBtn.style.display = 'block';
       logoutBtn.style.display = 'block';
+      if (currentUser.role === 'admin') {
+        adminPanelBtn.style.display = 'block';
+      } else {
+        adminPanelBtn.style.display = 'none';
+      }
     } else {
       loginBtn.style.display = 'block';
       registerBtn.style.display = 'block';
       showFormBtn.style.display = 'none';
       logoutBtn.style.display = 'none';
+      adminPanelBtn.style.display = 'none';
     }
   }
 
@@ -305,6 +319,254 @@ document.addEventListener('DOMContentLoaded', () => {
 
       col.querySelector('.film-card').addEventListener('click', () => showFilmDetails(film));
       filmList.appendChild(col);
+    });
+  }
+
+  async function loadAdminDashboard() {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Nincs bejelentkezve!');
+      }
+
+      console.log('Token:', token);
+
+      const [usersResponse, filmsResponse, statsResponse] = await Promise.all([
+        fetch(`${apiUrl}/admin/users`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }),
+        fetch(`${apiUrl}/admin/films`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }),
+        fetch(`${apiUrl}/admin/stats`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+      ]);
+
+      if (!usersResponse.ok) {
+        const errorData = await usersResponse.json();
+        throw new Error(`Felhasználók betöltése sikertelen: ${errorData.error || usersResponse.statusText}`);
+      }
+      if (!filmsResponse.ok) {
+        const errorData = await filmsResponse.json();
+        throw new Error(`Filmek betöltése sikertelen: ${errorData.error || filmsResponse.statusText}`);
+      }
+      if (!statsResponse.ok) {
+        const errorData = await statsResponse.json();
+        throw new Error(`Statisztikák betöltése sikertelen: ${errorData.error || statsResponse.statusText}`);
+      }
+
+      const [users, films, stats] = await Promise.all([
+        usersResponse.json(),
+        filmsResponse.json(),
+        statsResponse.json()
+      ]);
+
+      console.log('Loaded data:', { users, films, stats });
+      renderAdminDashboard(users, films, stats);
+    } catch (error) {
+      console.error('Admin dashboard betöltési hiba:', error);
+      const dashboardContent = document.getElementById('adminDashboardContent');
+      dashboardContent.innerHTML = `
+        <div class="alert alert-danger">
+          <h4>Hiba történt az admin felület betöltésekor</h4>
+          <p>${error.message}</p>
+        </div>
+      `;
+    }
+  }
+
+  function renderAdminDashboard(users, films, stats) {
+    const dashboardContent = document.getElementById('adminDashboardContent');
+    dashboardContent.innerHTML = `
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <div class="card bg-dark text-white">
+            <div class="card-body">
+              <h5 class="card-title">Felhasználók száma</h5>
+              <p class="card-text display-4">${stats.totalUsers}</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card bg-dark text-white">
+            <div class="card-body">
+              <h5 class="card-title">Filmek száma</h5>
+              <p class="card-text display-4">${stats.totalFilms}</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card bg-dark text-white">
+            <div class="card-body">
+              <h5 class="card-title">Kategóriák száma</h5>
+              <p class="card-text display-4">${stats.totalCategories}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card bg-dark text-white mb-4">
+            <div class="card-header">
+              <h5 class="mb-0">Felhasználók kezelése</h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-dark">
+                  <thead>
+                    <tr>
+                      <th>Név</th>
+                      <th>Email</th>
+                      <th>Jogosultság</th>
+                      <th>Műveletek</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${users.map(user => `
+                      <tr>
+                        <td>${user.name}</td>
+                        <td>${user.email}</td>
+                        <td>
+                          <select class="form-select form-select-sm" onchange="updateUserRole(${user.id}, this.value)">
+                            <option value="user" ${user.role === 'user' ? 'selected' : ''}>Felhasználó</option>
+                            <option value="moderator" ${user.role === 'moderator' ? 'selected' : ''}>Moderátor</option>
+                            <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                          </select>
+                        </td>
+                        <td>
+                          <button class="btn btn-sm btn-danger" onclick="toggleUserStatus(${user.id})">
+                            ${user.isActive ? 'Tiltás' : 'Aktiválás'}
+                          </button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card bg-dark text-white mb-4">
+            <div class="card-header">
+              <h5 class="mb-0">Kategóriák kezelése</h5>
+            </div>
+            <div class="card-body">
+              <form id="categoryForm" class="mb-3">
+                <div class="input-group">
+                  <input type="text" class="form-control" id="newCategory" placeholder="Új kategória neve">
+                  <button class="btn btn-primary" type="submit">Hozzáadás</button>
+                </div>
+              </form>
+              <div class="list-group">
+                ${stats.categories.map(category => `
+                  <div class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
+                    ${category.name}
+                    <button class="btn btn-sm btn-danger" onclick="deleteCategory(${category.id})">Törlés</button>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    window.updateUserRole = async (userId, newRole) => {
+      try {
+        console.log('Attempting to update role:', { userId, newRole });
+        
+        const response = await fetch(`${apiUrl}/admin/users/${userId}/role`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ role: newRole })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          console.error('Role update failed:', data);
+          throw new Error(data.error || 'Hiba a jogosultság módosításakor');
+        }
+
+        console.log('Role updated successfully:', data);
+        await loadAdminDashboard();
+      } catch (error) {
+        console.error('Error updating role:', error);
+        alert(error.message);
+        await loadAdminDashboard();
+      }
+    };
+
+    window.toggleUserStatus = async (userId) => {
+      try {
+        const response = await fetch(`${apiUrl}/admin/users/${userId}/toggle`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+
+        if (!response.ok) throw new Error('Hiba a felhasználó állapotának módosításakor');
+        loadAdminDashboard();
+      } catch (error) {
+        alert('Hiba történt a felhasználó állapotának módosításakor');
+      }
+    };
+
+    window.deleteCategory = async (categoryId) => {
+      if (!confirm('Biztosan törölni szeretnéd ezt a kategóriát?')) return;
+
+      try {
+        const response = await fetch(`${apiUrl}/admin/categories/${categoryId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+
+        if (!response.ok) throw new Error('Hiba a kategória törlésekor');
+        loadAdminDashboard();
+      } catch (error) {
+        alert('Hiba történt a kategória törlésekor');
+      }
+    };
+
+    document.getElementById('categoryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const categoryName = document.getElementById('newCategory').value;
+
+      try {
+        const response = await fetch(`${apiUrl}/admin/categories`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name: categoryName })
+        });
+
+        if (!response.ok) throw new Error('Hiba a kategória hozzáadásakor');
+        document.getElementById('newCategory').value = '';
+        loadAdminDashboard();
+      } catch (error) {
+        alert('Hiba történt a kategória hozzáadásakor');
+      }
     });
   }
 

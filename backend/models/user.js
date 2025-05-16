@@ -3,6 +3,11 @@ const bcrypt = require('bcrypt');
 
 module.exports = (sequelize) => {
   const User = sequelize.define('User', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
     email: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -15,19 +20,28 @@ module.exports = (sequelize) => {
       type: DataTypes.STRING,
       allowNull: false
     },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
     role: {
       type: DataTypes.ENUM('user', 'moderator', 'admin'),
       defaultValue: 'user'
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
     }
+  }, {
+    tableName: 'Users',
+    timestamps: false
   });
 
   User.beforeCreate(async (user) => {
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(user.password, salt);
+    if (user.password) {
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(user.password, salt);
+    }
   });
 
   User.prototype.comparePassword = async function(candidatePassword) {

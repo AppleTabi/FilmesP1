@@ -14,6 +14,7 @@
       <button class="btn btn-outline-light" id="loginBtn">Bejelentkezés</button>
       <button class="btn btn-outline-light" id="registerBtn">Regisztráció</button>
       <button class="btn btn-danger" id="showFormBtn" style="display: none;">+ Új film feltöltése</button>
+      <button class="btn btn-outline-light" id="adminPanelBtn" style="display: none;">Admin Panel</button>
       <button class="btn btn-outline-danger" id="logoutBtn" style="display: none;">Kijelentkezés</button>
     </div>
   </header>
@@ -67,6 +68,21 @@
             </div>
             <button type="submit" class="btn btn-primary">Regisztráció</button>
           </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+  <div class="modal fade" id="adminModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header">
+          <h5 class="modal-title">Admin Panel</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="adminDashboardContent"></div>
         </div>
       </div>
     </div>

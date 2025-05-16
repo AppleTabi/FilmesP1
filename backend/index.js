@@ -63,12 +63,28 @@ app.use(express.json());
 const sequelize = new Sequelize('filmfeltolto', 'root', '', {
   host: 'localhost',
   dialect: 'mysql',
-  logging: false,
+  logging: console.log,
   charset: 'utf8mb4',
   collate: 'utf8mb4_hungarian_ci'
 });
 
 const User = require('./models/user')(sequelize);
+
+const Category = sequelize.define('Category', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true
+  }
+}, {
+  tableName: 'Categories',
+  timestamps: false
+});
 
 const Film = sequelize.define('Film', {
   id: {
@@ -113,8 +129,8 @@ const initDatabase = async () => {
     await sequelize.authenticate();
     console.log('MySQL kapcsolat sikeres');
     
-    await sequelize.sync({ force: true });
-    console.log('Adatbázis és táblák létrehozva');
+    await sequelize.sync({ alter: true });
+    console.log('Adatbázis és táblák szinkronizálva');
     
     const uploadsDir = path.join(__dirname, 'uploads');
     const imagesDir = path.join(uploadsDir, 'images');
@@ -234,7 +250,7 @@ app.get('/films', async (req, res) => {
   }
 });
 
-app.delete('/films/:id', auth(['moderator', 'admin']), async (req, res) => {
+app.delete('/films/:id', auth(['admin']), async (req, res) => {
   try {
     const film = await Film.findByPk(req.params.id);
     
@@ -242,14 +258,186 @@ app.delete('/films/:id', auth(['moderator', 'admin']), async (req, res) => {
       return res.status(404).json({ error: 'A film nem található!' });
     }
 
-    if (req.user.role !== 'admin' && film.userId !== req.user.id) {
-      return res.status(403).json({ error: 'Nincs jogosultságod törölni ezt a filmet!' });
-    }
-
     await film.destroy();
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Hiba történt a törlés során!' });
+  }
+});
+
+const adminAuth = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Nincs jogosultságod az admin felülethez!' });
+  }
+  next();
+};
+
+app.get('/admin/users', auth(['admin']), async (req, res) => {
+  try {
+    console.log('Admin users endpoint called');
+    console.log('User from auth middleware:', req.user);
+    
+    await sequelize.authenticate();
+    console.log('Database connection is working');
+
+    const users = await User.findAll({
+      attributes: ['id', 'name', 'email', 'role', 'isActive'],
+      raw: true
+    });
+    
+    console.log('Found users:', users);
+    res.json(users);
+  } catch (error) {
+    console.error('Detailed error in admin/users:', error);
+    
+    if (error.name === 'SequelizeConnectionError') {
+      return res.status(500).json({ 
+        error: 'Adatbázis kapcsolati hiba',
+        details: error.message
+      });
+    }
+    
+    if (error.name === 'SequelizeTableDoesNotExistError') {
+      return res.status(500).json({ 
+        error: 'A felhasználók tábla nem található',
+        details: error.message
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Hiba a felhasználók lekérdezésekor',
+      details: error.message
+    });
+  }
+});
+
+app.get('/admin/films', auth(['admin']), async (req, res) => {
+  try {
+    const films = await Film.findAll({
+      include: [{
+        model: User,
+        attributes: ['name', 'email']
+      }]
+    });
+    res.json(films);
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba a filmek lekérdezésekor' });
+  }
+});
+
+app.get('/admin/stats', auth(['admin']), async (req, res) => {
+  try {
+    const [totalUsers, totalFilms] = await Promise.all([
+      User.count(),
+      Film.count()
+    ]);
+
+    const films = await Film.findAll({
+      attributes: ['category'],
+      group: ['category']
+    });
+
+    const categories = films.map(film => ({
+      id: film.category,
+      name: film.category
+    }));
+
+    res.json({
+      totalUsers,
+      totalFilms,
+      totalCategories: categories.length,
+      categories
+    });
+  } catch (error) {
+    console.error('Hiba a statisztikák lekérdezésekor:', error);
+    res.status(500).json({ error: 'Hiba a statisztikák lekérdezésekor' });
+  }
+});
+
+app.put('/admin/users/:id/role', auth(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    console.log('Role update attempt:', { userId: id, newRole: role, currentUser: req.user });
+
+    if (!['user', 'moderator', 'admin'].includes(role)) {
+      console.log('Invalid role:', role);
+      return res.status(400).json({ error: 'Érvénytelen jogosultság!' });
+    }
+
+    const user = await User.findByPk(id);
+    if (!user) {
+      console.log('User not found:', id);
+      return res.status(404).json({ error: 'Felhasználó nem található!' });
+    }
+
+    console.log('Found user:', { id: user.id, currentRole: user.role, isSelf: user.id === req.user.id });
+
+    if (user.id === req.user.id && role !== 'admin') {
+      console.log('Attempt to remove own admin role');
+      return res.status(403).json({ error: 'Nem veheted el saját magadtól az admin jogot!' });
+    }
+
+    if (user.role === 'admin' && role !== 'admin') {
+      const adminCount = await User.count({ where: { role: 'admin' } });
+      console.log('Admin count:', adminCount);
+      if (adminCount <= 1) {
+        return res.status(403).json({ error: 'Nem lehet elvenni az utolsó admin jogosultságot!' });
+      }
+    }
+
+    await user.update({ role });
+    console.log('Role updated successfully:', { userId: user.id, newRole: role });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Hiba a jogosultság módosításakor:', error);
+    res.status(500).json({ error: 'Hiba a jogosultság módosításakor: ' + error.message });
+  }
+});
+
+app.put('/admin/users/:id/toggle', auth(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findByPk(id);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'Felhasználó nem található!' });
+    }
+
+    await user.update({ isActive: !user.isActive });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba a felhasználó állapotának módosításakor' });
+  }
+});
+
+app.post('/admin/categories', auth(['admin']), async (req, res) => {
+  try {
+    const { name } = req.body;
+    const category = await Category.create({ name });
+    res.status(201).json(category);
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'Ez a kategória már létezik!' });
+    }
+    res.status(500).json({ error: 'Hiba a kategória létrehozásakor' });
+  }
+});
+
+app.delete('/admin/categories/:id', auth(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const category = await Category.findByPk(id);
+    
+    if (!category) {
+      return res.status(404).json({ error: 'Kategória nem található!' });
+    }
+
+    await category.destroy();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba a kategória törlésekor' });
   }
 });
 
