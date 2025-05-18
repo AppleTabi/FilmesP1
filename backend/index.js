@@ -124,6 +124,93 @@ const Film = sequelize.define('Film', {
 Film.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(Film, { foreignKey: 'userId' });
 
+const Favorite = sequelize.define('Favorite', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  filmId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  }
+}, {
+  tableName: 'Favorites',
+  timestamps: false
+});
+
+const Rating = sequelize.define('Rating', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  filmId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  rating: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: 1,
+      max: 5
+    }
+  }
+}, {
+  tableName: 'Ratings',
+  timestamps: false
+});
+
+const Comment = sequelize.define('Comment', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  filmId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  content: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  }
+}, {
+  tableName: 'Comments',
+  timestamps: true
+});
+
+Film.hasMany(Rating, { foreignKey: 'filmId' });
+Rating.belongsTo(Film, { foreignKey: 'filmId' });
+
+User.hasMany(Rating, { foreignKey: 'userId' });
+Rating.belongsTo(User, { foreignKey: 'userId' });
+
+Film.hasMany(Comment, { foreignKey: 'filmId' });
+Comment.belongsTo(Film, { foreignKey: 'filmId' });
+
+User.hasMany(Comment, { foreignKey: 'userId' });
+Comment.belongsTo(User, { foreignKey: 'userId' });
+
+Film.hasMany(Favorite, { foreignKey: 'filmId' });
+Favorite.belongsTo(Film, { foreignKey: 'filmId' });
+
+User.hasMany(Favorite, { foreignKey: 'userId' });
+Favorite.belongsTo(User, { foreignKey: 'userId' });
+
 const initDatabase = async () => {
   try {
     await sequelize.authenticate();
@@ -332,6 +419,22 @@ app.get('/admin/stats', auth(['admin']), async (req, res) => {
       Film.count()
     ]);
 
+    // Filmek átlagos értékelései
+    const filmsWithRatings = await Film.findAll({
+      include: [{
+        model: Rating,
+        attributes: []
+      }],
+      attributes: [
+        'id',
+        'title',
+        [sequelize.fn('AVG', sequelize.col('Ratings.rating')), 'averageRating'],
+        [sequelize.fn('COUNT', sequelize.col('Ratings.id')), 'ratingCount']
+      ],
+      group: ['Film.id'],
+      having: sequelize.literal('ratingCount > 0')
+    });
+
     const films = await Film.findAll({
       attributes: ['category'],
       group: ['category']
@@ -342,15 +445,27 @@ app.get('/admin/stats', auth(['admin']), async (req, res) => {
       name: film.category
     }));
 
+    // Átlagos értékelések formázása
+    const formattedFilmsWithRatings = filmsWithRatings.map(film => ({
+      id: film.id,
+      title: film.title,
+      averageRating: parseFloat(film.getDataValue('averageRating')).toFixed(1),
+      ratingCount: parseInt(film.getDataValue('ratingCount'))
+    }));
+
     res.json({
       totalUsers,
       totalFilms,
       totalCategories: categories.length,
-      categories
+      categories,
+      filmsWithRatings: formattedFilmsWithRatings
     });
   } catch (error) {
     console.error('Hiba a statisztikák lekérdezésekor:', error);
-    res.status(500).json({ error: 'Hiba a statisztikák lekérdezésekor' });
+    res.status(500).json({ 
+      error: 'Hiba a statisztikák lekérdezésekor',
+      details: error.message 
+    });
   }
 });
 
@@ -438,6 +553,174 @@ app.delete('/admin/categories/:id', auth(['admin']), async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Hiba a kategória törlésekor' });
+  }
+});
+
+app.post('/favorites/:filmId', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { filmId } = req.params;
+    const userId = req.user.id;
+
+    const existingFavorite = await Favorite.findOne({
+      where: { userId, filmId }
+    });
+
+    if (existingFavorite) {
+      await existingFavorite.destroy();
+      return res.json({ success: true, action: 'removed' });
+    }
+
+    await Favorite.create({ userId, filmId });
+    res.json({ success: true, action: 'added' });
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt a kedvencek kezelésekor' });
+  }
+});
+
+app.get('/favorites', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const favorites = await Favorite.findAll({
+      where: { userId },
+      include: [{
+        model: Film,
+        include: [{
+          model: User,
+          attributes: ['name', 'email']
+        }]
+      }]
+    });
+    res.json(favorites);
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt a kedvencek lekérdezésekor' });
+  }
+});
+
+app.post('/ratings/:filmId', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { filmId } = req.params;
+    const { rating } = req.body;
+    const userId = req.user.id;
+
+    // Ellenőrizzük, hogy a felhasználó már értékelte-e a filmet
+    const existingRating = await Rating.findOne({
+      where: { userId, filmId }
+    });
+
+    if (existingRating) {
+      return res.status(400).json({ error: 'Már értékelted ezt a filmet!' });
+    }
+
+    // Létrehozzuk az új értékelést
+    const newRating = await Rating.create({
+      userId,
+      filmId,
+      rating
+    });
+
+    // Kiszámoljuk az átlagos értékelést
+    const ratings = await Rating.findAll({
+      where: { filmId },
+      attributes: [[sequelize.fn('AVG', sequelize.col('rating')), 'averageRating']]
+    });
+
+    const averageRating = parseFloat(ratings[0].getDataValue('averageRating')).toFixed(1);
+
+    res.json({ 
+      success: true, 
+      rating: newRating.rating,
+      averageRating
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt az értékelés mentésekor' });
+  }
+});
+
+app.get('/ratings/:filmId', async (req, res) => {
+  try {
+    const { filmId } = req.params;
+    const ratings = await Rating.findAll({
+      where: { filmId },
+      include: [{
+        model: User,
+        attributes: ['name']
+      }]
+    });
+
+    // Kiszámoljuk az átlagos értékelést
+    const averageRating = ratings.length > 0 
+      ? (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length).toFixed(1)
+      : 0;
+
+    res.json({
+      ratings,
+      averageRating,
+      totalRatings: ratings.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt az értékelések lekérdezésekor' });
+  }
+});
+
+app.post('/comments/:filmId', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { filmId } = req.params;
+    const { content } = req.body;
+    const userId = req.user.id;
+
+    const comment = await Comment.create({
+      userId,
+      filmId,
+      content
+    });
+
+    const commentWithUser = await Comment.findByPk(comment.id, {
+      include: [{
+        model: User,
+        attributes: ['name']
+      }]
+    });
+
+    res.status(201).json(commentWithUser);
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt a komment mentésekor' });
+  }
+});
+
+app.get('/comments/:filmId', async (req, res) => {
+  try {
+    const { filmId } = req.params;
+    const comments = await Comment.findAll({
+      where: { filmId },
+      include: [{
+        model: User,
+        attributes: ['name']
+      }],
+      order: [['createdAt', 'DESC']]
+    });
+    res.json(comments);
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt a kommentek lekérdezésekor' });
+  }
+});
+
+app.delete('/comments/:commentId', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const comment = await Comment.findByPk(commentId);
+
+    if (!comment) {
+      return res.status(404).json({ error: 'A komment nem található!' });
+    }
+
+    if (comment.userId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Nincs jogosultságod a komment törléséhez!' });
+    }
+
+    await comment.destroy();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt a komment törlésekor' });
   }
 });
 

@@ -3,6 +3,10 @@ const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
 
 let currentUser = null;
+let allFilms = [];
+let filteredFilms = [];
+let favoriteFilms = [];
+let filteredFavoriteFilms = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById("filmForm");
@@ -42,6 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     currentUser = null;
+    favoriteFilms = [];
+    filteredFavoriteFilms = [];
     updateUI();
     loadFilms();
   });
@@ -117,14 +123,20 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleLogin(user) {
     currentUser = user;
     updateUI();
+    loadFavorites();
+    loadFilms();
   }
 
   function updateUI() {
+    const favoritesTabContainer = document.getElementById('favorites-tab-container');
     if (currentUser) {
       loginBtn.style.display = 'none';
       registerBtn.style.display = 'none';
       showFormBtn.style.display = 'block';
       logoutBtn.style.display = 'block';
+      if (favoritesTabContainer) {
+        favoritesTabContainer.style.display = 'block';
+      }
       if (currentUser.role === 'admin') {
         adminPanelBtn.style.display = 'block';
       } else {
@@ -136,11 +148,15 @@ document.addEventListener('DOMContentLoaded', () => {
       showFormBtn.style.display = 'none';
       logoutBtn.style.display = 'none';
       adminPanelBtn.style.display = 'none';
+      if (favoritesTabContainer) {
+        favoritesTabContainer.style.display = 'none';
+        const favoritesTab = document.getElementById('favorites-tab');
+        if (favoritesTab && favoritesTab.classList.contains('active')) {
+          document.getElementById('all-films-tab').click();
+        }
+      }
     }
   }
-
-  let allFilms = [];
-  let filteredFilms = [];
 
   showFormBtn.addEventListener("click", () => {
     formContainer.style.display = formContainer.style.display === "none" ? "block" : "none";
@@ -210,6 +226,28 @@ document.addEventListener('DOMContentLoaded', () => {
                   <p class="mb-3">${film.description}</p>
                   <p><strong>Kategória:</strong> ${film.category}</p>
                   <p><strong>Hossz:</strong> ${film.time} perc</p>
+                  ${currentUser ? `
+                    <div class="d-flex gap-2 mb-3">
+                      <button class="btn btn-outline-primary favorite-btn" data-id="${film.id}">
+                        <i class="bi bi-heart"></i> Kedvencekhez adás
+                      </button>
+                      <div class="rating-container">
+                        <div class="rating-stars">
+                          ${[1, 2, 3, 4, 5].map(star => `
+                            <i class="bi bi-star-fill rating-star" data-rating="${star}" data-film-id="${film.id}"></i>
+                          `).join('')}
+                        </div>
+                        <div class="rating-info">
+                          <span class="average-rating">0.0</span>
+                          <small class="text-muted">(<span class="rating-count">0</span> értékelés)</small>
+                        </div>
+                      </div>
+                    </div>
+                  ` : `
+                    <div class="alert alert-info">
+                      Jelentkezz be a kedvencekhez adáshoz és értékeléshez!
+                    </div>
+                  `}
                 </div>
               </div>
               ${film.video ? `
@@ -218,9 +256,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
                   </video>
                 </div>` : ''}
-              <div class="text-end mt-3">
-                <button class="delete-btn" data-id="${film.id}">🗑️ Törlés</button>
+              
+              <div class="comments-section mt-4">
+                <h5>Kommentek</h5>
+                <div class="comments-list mb-3"></div>
+                ${currentUser ? `
+                  <form class="comment-form">
+                    <div class="mb-3">
+                      <textarea class="form-control" placeholder="Írj egy kommentet..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Küldés</button>
+                  </form>
+                ` : '<p>Jelentkezz be a kommenteléshez!</p>'}
               </div>
+
+              ${currentUser && (currentUser.role === 'admin' || currentUser.id === film.userId) ? `
+                <div class="text-end mt-3">
+                  <button class="delete-btn" data-id="${film.id}">🗑️ Törlés</button>
+                </div>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -234,29 +288,219 @@ document.addEventListener('DOMContentLoaded', () => {
     const modal = new bootstrap.Modal(document.querySelector(`#filmModal${film.id}`));
     modal.show();
 
-    const deleteBtn = document.querySelector(`#filmModal${film.id} .delete-btn`);
-    deleteBtn.addEventListener('click', async () => {
-      if (confirm('Biztosan törölni szeretnéd ezt a filmet?')) {
-        try {
-          const response = await fetch(`http://localhost:3000/films/${film.id}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
+    const modalElement = document.querySelector(`#filmModal${film.id}`);
+    const favoriteBtn = modalElement.querySelector('.favorite-btn');
+    const ratingStars = modalElement.querySelectorAll('.rating-star');
+    const commentsList = modalElement.querySelector('.comments-list');
+    const commentForm = modalElement.querySelector('.comment-form');
+    const averageRatingSpan = modalElement.querySelector('.average-rating');
+    const ratingCountSpan = modalElement.querySelector('.rating-count');
+
+    // Értékelések betöltése
+    loadRatings(film.id);
+
+    // Értékelés kezelése
+    if (ratingStars) {
+      ratingStars.forEach(star => {
+        star.addEventListener('click', async () => {
+          if (!currentUser) {
+            alert('Jelentkezz be az értékeléshez!');
+            return;
+          }
+
+          const rating = star.dataset.rating;
+          try {
+            const response = await fetch(`${apiUrl}/ratings/${film.id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ rating })
+            });
+            
+            if (!response.ok) {
+              const error = await response.json();
+              alert(error.error);
+              return;
             }
+
+            const data = await response.json();
+            if (data.success) {
+              updateRatingStars(rating);
+              updateRatingInfo(data.averageRating, data.totalRatings);
+            }
+          } catch (error) {
+            console.error('Hiba:', error);
+          }
+        });
+      });
+    }
+
+    // Kommentek betöltése
+    loadComments(film.id);
+
+    // Komment form kezelése
+    if (commentForm) {
+      commentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!currentUser) {
+          alert('Jelentkezz be a kommenteléshez!');
+          return;
+        }
+        const content = commentForm.querySelector('textarea').value;
+        
+        try {
+          const response = await fetch(`${apiUrl}/comments/${film.id}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content })
           });
+          const comment = await response.json();
           
-          if (response.ok) {
-            modal.hide();
-            loadFilms();
-          } else {
-            alert('Hiba történt a film törlésekor.');
+          if (comment) {
+            addCommentToList(comment);
+            commentForm.reset();
           }
         } catch (error) {
           console.error('Hiba:', error);
-          alert('Hiba történt a film törlésekor.');
         }
+      });
+    }
+
+    if (favoriteBtn) {
+      const isFavorite = favoriteFilms.some(f => f.id === film.id);
+      favoriteBtn.classList.toggle('active', isFavorite);
+      favoriteBtn.innerHTML = `
+        <i class="bi bi-heart${isFavorite ? '-fill' : ''}"></i>
+        ${isFavorite ? 'Eltávolítás a kedvencekből' : 'Kedvencekhez adás'}
+      `;
+      
+      favoriteBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!currentUser) {
+          alert('Jelentkezz be a kedvencekhez adáshoz!');
+          return;
+        }
+        await toggleFavorite(film.id);
+        const newIsFavorite = favoriteFilms.some(f => f.id === film.id);
+        favoriteBtn.classList.toggle('active', newIsFavorite);
+        favoriteBtn.innerHTML = `
+          <i class="bi bi-heart${newIsFavorite ? '-fill' : ''}"></i>
+          ${newIsFavorite ? 'Eltávolítás a kedvencekből' : 'Kedvencekhez adás'}
+        `;
+      });
+    }
+  }
+
+  function updateRatingStars(rating) {
+    const stars = document.querySelectorAll('.rating-star');
+    stars.forEach((star, index) => {
+      if (index < rating) {
+        star.classList.add('text-warning');
+      } else {
+        star.classList.remove('text-warning');
       }
     });
+  }
+
+  async function loadRatings(filmId) {
+    try {
+      const response = await fetch(`${apiUrl}/ratings/${filmId}`);
+      const data = await response.json();
+      
+      updateRatingInfo(data.averageRating, data.totalRatings);
+      
+      if (currentUser) {
+        const userRating = data.ratings.find(r => r.userId === currentUser.id);
+        if (userRating) {
+          updateRatingStars(userRating.rating);
+        }
+      }
+    } catch (error) {
+      console.error('Hiba:', error);
+    }
+  }
+
+  function updateRatingInfo(averageRating, totalRatings) {
+    const modalElement = document.querySelector('.modal.show');
+    if (modalElement) {
+      const averageRatingSpan = modalElement.querySelector('.average-rating');
+      const ratingCountSpan = modalElement.querySelector('.rating-count');
+      
+      if (averageRatingSpan && ratingCountSpan) {
+        averageRatingSpan.textContent = averageRating;
+        ratingCountSpan.textContent = totalRatings;
+      }
+    }
+  }
+
+  async function loadComments(filmId) {
+    try {
+      const response = await fetch(`${apiUrl}/comments/${filmId}`);
+      const comments = await response.json();
+      
+      const commentsList = document.querySelector(`#filmModal${filmId} .comments-list`);
+      commentsList.innerHTML = comments.map(comment => `
+        <div class="comment mb-3 p-3 bg-dark rounded">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>${comment.User.name}</strong>
+            ${currentUser && (currentUser.id === comment.userId || currentUser.role === 'admin') ? `
+              <button class="btn btn-sm btn-danger delete-comment" data-comment-id="${comment.id}">
+                <i class="bi bi-trash"></i>
+              </button>
+            ` : ''}
+          </div>
+          <p class="mb-0">${comment.content}</p>
+          <small class="text-muted">${new Date(comment.createdAt).toLocaleString()}</small>
+        </div>
+      `).join('');
+
+      // Komment törlés kezelése
+      commentsList.querySelectorAll('.delete-comment').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const commentId = btn.dataset.commentId;
+          if (confirm('Biztosan törölni szeretnéd ezt a kommentet?')) {
+            try {
+              const response = await fetch(`${apiUrl}/comments/${commentId}`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+              });
+              
+              if (response.ok) {
+                btn.closest('.comment').remove();
+              }
+            } catch (error) {
+              console.error('Hiba:', error);
+            }
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Hiba:', error);
+    }
+  }
+
+  function addCommentToList(comment) {
+    const commentsList = document.querySelector(`#filmModal${comment.filmId} .comments-list`);
+    const commentHtml = `
+      <div class="comment mb-3 p-3 bg-dark rounded">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong>${comment.User.name}</strong>
+          <button class="btn btn-sm btn-danger delete-comment" data-comment-id="${comment.id}">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+        <p class="mb-0">${comment.content}</p>
+        <small class="text-muted">${new Date(comment.createdAt).toLocaleString()}</small>
+      </div>
+    `;
+    commentsList.insertAdjacentHTML('afterbegin', commentHtml);
   }
 
   form.addEventListener("submit", async (e) => {
@@ -461,22 +705,77 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="col-md-6">
           <div class="card bg-dark text-white mb-4">
             <div class="card-header">
+              <h5 class="mb-0">Filmek értékelései</h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-dark">
+                  <thead>
+                    <tr>
+                      <th>Film</th>
+                      <th>Átlagos értékelés</th>
+                      <th>Értékelések száma</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${stats.filmsWithRatings.map(film => `
+                      <tr>
+                        <td>${film.title}</td>
+                        <td>
+                          <div class="d-flex align-items-center">
+                            <span class="me-2">${film.averageRating}</span>
+                            <div class="rating-stars small">
+                              ${[1, 2, 3, 4, 5].map(star => `
+                                <i class="bi bi-star-fill ${star <= Math.round(film.averageRating) ? 'text-warning' : 'text-secondary'}"></i>
+                              `).join('')}
+                            </div>
+                          </div>
+                        </td>
+                        <td>${film.ratingCount}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card bg-dark text-white mb-4">
+            <div class="card-header">
               <h5 class="mb-0">Kategóriák kezelése</h5>
             </div>
             <div class="card-body">
               <form id="categoryForm" class="mb-3">
                 <div class="input-group">
-                  <input type="text" class="form-control" id="newCategory" placeholder="Új kategória neve">
-                  <button class="btn btn-primary" type="submit">Hozzáadás</button>
+                  <input type="text" id="newCategory" class="form-control" placeholder="Új kategória neve" required>
+                  <button type="submit" class="btn btn-primary">Hozzáadás</button>
                 </div>
               </form>
-              <div class="list-group">
-                ${stats.categories.map(category => `
-                  <div class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
-                    ${category.name}
-                    <button class="btn btn-sm btn-danger" onclick="deleteCategory(${category.id})">Törlés</button>
-                  </div>
-                `).join('')}
+              <div class="table-responsive">
+                <table class="table table-dark">
+                  <thead>
+                    <tr>
+                      <th>Kategória</th>
+                      <th>Műveletek</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${stats.categories.map(category => `
+                      <tr>
+                        <td>${category.name}</td>
+                        <td>
+                          <button class="btn btn-sm btn-danger" onclick="deleteCategory('${category.id}')">
+                            <i class="bi bi-trash"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -484,10 +783,35 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
+    // Event listener hozzáadása a kategória formhoz
+    const categoryForm = document.getElementById('categoryForm');
+    if (categoryForm) {
+      categoryForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const categoryName = document.getElementById('newCategory').value;
+
+        try {
+          const response = await fetch(`${apiUrl}/admin/categories`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name: categoryName })
+          });
+
+          if (!response.ok) throw new Error('Hiba a kategória hozzáadásakor');
+          document.getElementById('newCategory').value = '';
+          loadAdminDashboard();
+        } catch (error) {
+          alert('Hiba történt a kategória hozzáadásakor');
+        }
+      });
+    }
+
+    // Globális függvények definiálása
     window.updateUserRole = async (userId, newRole) => {
       try {
-        console.log('Attempting to update role:', { userId, newRole });
-        
         const response = await fetch(`${apiUrl}/admin/users/${userId}/role`, {
           method: 'PUT',
           headers: {
@@ -497,19 +821,10 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ role: newRole })
         });
 
-        const data = await response.json();
-        
-        if (!response.ok) {
-          console.error('Role update failed:', data);
-          throw new Error(data.error || 'Hiba a jogosultság módosításakor');
-        }
-
-        console.log('Role updated successfully:', data);
-        await loadAdminDashboard();
+        if (!response.ok) throw new Error('Hiba a jogosultság módosításakor');
+        loadAdminDashboard();
       } catch (error) {
-        console.error('Error updating role:', error);
         alert(error.message);
-        await loadAdminDashboard();
       }
     };
 
@@ -546,28 +861,107 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Hiba történt a kategória törlésekor');
       }
     };
+  }
 
-    document.getElementById('categoryForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const categoryName = document.getElementById('newCategory').value;
+  const favoritesSearchInput = document.getElementById('favoritesSearchInput');
+  const favoritesCategoryFilter = document.getElementById('favoritesCategoryFilter');
 
-      try {
-        const response = await fetch(`${apiUrl}/admin/categories`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ name: categoryName })
-        });
+  favoritesSearchInput.addEventListener('input', filterFavoriteFilms);
+  favoritesCategoryFilter.addEventListener('change', filterFavoriteFilms);
 
-        if (!response.ok) throw new Error('Hiba a kategória hozzáadásakor');
-        document.getElementById('newCategory').value = '';
-        loadAdminDashboard();
-      } catch (error) {
-        alert('Hiba történt a kategória hozzáadásakor');
-      }
+  // Kedvencek betöltése
+  async function loadFavorites() {
+    if (!currentUser) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/favorites`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const favorites = await response.json();
+      favoriteFilms = favorites.map(fav => fav.Film);
+      filterFavoriteFilms();
+    } catch (error) {
+      console.error('Hiba a kedvencek betöltésekor:', error);
+    }
+  }
+
+  // Kedvencek szűrése
+  function filterFavoriteFilms() {
+    const searchTerm = favoritesSearchInput.value.toLowerCase();
+    const selectedCategory = favoritesCategoryFilter.value;
+
+    filteredFavoriteFilms = favoriteFilms.filter(film => {
+      const matchesSearch = film.title.toLowerCase().includes(searchTerm) ||
+                          film.description.toLowerCase().includes(searchTerm);
+      const matchesCategory = !selectedCategory || film.category === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
     });
+
+    renderFavoriteFilms(filteredFavoriteFilms);
+  }
+
+  // Kedvencek megjelenítése
+  function renderFavoriteFilms(films) {
+    const favoritesList = document.getElementById('favoritesList');
+    favoritesList.innerHTML = "";
+
+    if (films.length === 0) {
+      favoritesList.innerHTML = '<div class="col-12"><p class="text-center text-white">Nincs találat a keresési feltételeknek megfelelően.</p></div>';
+      return;
+    }
+
+    films.forEach((film) => {
+      const col = document.createElement("div");
+      col.className = "col-md-3 mb-4";
+
+      col.innerHTML = `
+        <div class="card h-100 text-white film-card" role="button">
+          <img src="http://localhost:3000/uploads/images/${film.image}" class="card-img-top" alt="${film.title}">
+          <div class="card-body">
+            <h5 class="card-title text-center">${film.title}</h5>
+          </div>
+        </div>
+      `;
+
+      col.querySelector('.film-card').addEventListener('click', () => showFilmDetails(film));
+      favoritesList.appendChild(col);
+    });
+  }
+
+  // Kedvencekhez adás/eltávolítás kezelése
+  async function toggleFavorite(filmId) {
+    if (!currentUser) {
+      alert('Jelentkezz be a kedvencekhez adáshoz!');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiUrl}/favorites/${filmId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        if (data.action === 'added') {
+          const film = allFilms.find(f => f.id === filmId);
+          if (film) {
+            favoriteFilms.push(film);
+            filterFavoriteFilms();
+          }
+        } else {
+          favoriteFilms = favoriteFilms.filter(f => f.id !== filmId);
+          filterFavoriteFilms();
+        }
+      }
+    } catch (error) {
+      console.error('Hiba a kedvencek kezelésekor:', error);
+    }
   }
 
   loadFilms();

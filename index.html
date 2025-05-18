@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Film Platform</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="src/style.css" />
 </head>
 <body>
@@ -19,7 +20,6 @@
     </div>
   </header>
 
-  <!-- Login Modal -->
   <div class="modal fade" id="loginModal" tabindex="-1">
     <div class="modal-dialog">
       <div class="modal-content bg-dark text-white">
@@ -44,7 +44,6 @@
     </div>
   </div>
 
-  <!-- Register Modal -->
   <div class="modal fade" id="registerModal" tabindex="-1">
     <div class="modal-dialog">
       <div class="modal-content bg-dark text-white">
@@ -73,7 +72,6 @@
     </div>
   </div>
 
-  <!-- Admin Modal -->
   <div class="modal fade" id="adminModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
       <div class="modal-content bg-dark text-white">
@@ -84,6 +82,76 @@
         <div class="modal-body">
           <div id="adminDashboardContent"></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container mt-4">
+    <ul class="nav nav-tabs mb-4" id="filmTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="all-films-tab" data-bs-toggle="tab" data-bs-target="#all-films" type="button" role="tab">Összes film</button>
+      </li>
+      <li class="nav-item" role="presentation" id="favorites-tab-container" style="display: none;">
+        <button class="nav-link" id="favorites-tab" data-bs-toggle="tab" data-bs-target="#favorites" type="button" role="tab">Kedvencek</button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="filmTabsContent">
+      <div class="tab-pane fade show active" id="all-films" role="tabpanel">
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <input type="text" id="searchInput" class="form-control" placeholder="Keresés cím vagy leírás alapján...">
+          </div>
+          <div class="col-md-6">
+            <select class="form-select" id="categoryFilter">
+              <option value="">Összes kategória</option>
+              <option value="Akció">Akció</option>
+              <option value="Vígjáték">Vígjáték</option>
+              <option value="Dráma">Dráma</option>
+              <option value="Sci-Fi">Sci-Fi</option>
+              <option value="Fantasy">Fantasy</option>
+              <option value="Horror">Horror</option>
+              <option value="Romantikus">Romantikus</option>
+              <option value="Dokumentum">Dokumentum</option>
+              <option value="Animációs">Animációs</option>
+              <option value="Családi">Családi</option>
+              <option value="Életrajzi">Életrajzi</option>
+              <option value="Katasztrófa">Katasztrófa</option>
+              <option value="Thriller">Thriller</option>
+              <option value="Western">Western</option>
+            </select>
+          </div>
+        </div>
+        <h2 class="text-white mb-4">Filmek</h2>
+        <div class="row g-4" id="filmList"></div>
+      </div>
+      <div class="tab-pane fade" id="favorites" role="tabpanel">
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <input type="text" id="favoritesSearchInput" class="form-control" placeholder="Keresés cím vagy leírás alapján...">
+          </div>
+          <div class="col-md-6">
+            <select class="form-select" id="favoritesCategoryFilter">
+              <option value="">Összes kategória</option>
+              <option value="Akció">Akció</option>
+              <option value="Vígjáték">Vígjáték</option>
+              <option value="Dráma">Dráma</option>
+              <option value="Sci-Fi">Sci-Fi</option>
+              <option value="Fantasy">Fantasy</option>
+              <option value="Horror">Horror</option>
+              <option value="Romantikus">Romantikus</option>
+              <option value="Dokumentum">Dokumentum</option>
+              <option value="Animációs">Animációs</option>
+              <option value="Családi">Családi</option>
+              <option value="Életrajzi">Életrajzi</option>
+              <option value="Katasztrófa">Katasztrófa</option>
+              <option value="Thriller">Thriller</option>
+              <option value="Western">Western</option>
+            </select>
+          </div>
+        </div>
+        <h2 class="text-white mb-4">Kedvencek</h2>
+        <div class="row g-4" id="favoritesList"></div>
       </div>
     </div>
   </div>
@@ -135,35 +203,6 @@
         <button type="submit" class="btn btn-success">Feltöltés</button>
       </form>
     </div>
-  </div>
-
-  <div class="container mt-5">
-    <div class="row mb-4">
-      <div class="col-md-6">
-        <input type="text" id="searchInput" class="form-control" placeholder="Keresés cím vagy leírás alapján...">
-      </div>
-      <div class="col-md-6">
-        <select class="form-select" id="categoryFilter">
-          <option value="">Összes kategória</option>
-          <option value="Akció">Akció</option>
-          <option value="Vígjáték">Vígjáték</option>
-          <option value="Dráma">Dráma</option>
-          <option value="Sci-Fi">Sci-Fi</option>
-          <option value="Fantasy">Fantasy</option>
-          <option value="Horror">Horror</option>
-          <option value="Romantikus">Romantikus</option>
-          <option value="Dokumentum">Dokumentum</option>
-          <option value="Animációs">Animációs</option>
-          <option value="Családi">Családi</option>
-          <option value="Életrajzi">Életrajzi</option>
-          <option value="Katasztrófa">Katasztrófa</option>
-          <option value="Thriller">Thriller</option>
-          <option value="Western">Western</option>
-        </select>
-      </div>
-    </div>
-    <h2 class="text-white mb-4">Filmek</h2>
-    <div class="row g-4" id="filmList"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

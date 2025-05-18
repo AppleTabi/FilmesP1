@@ -81,3 +81,89 @@ body {
   transform: translateY(-5px);
   box-shadow: 0 6px 12px rgba(0,0,0,0.2);
 }
+
+.favorite-btn {
+  transition: all 0.3s ease;
+}
+
+.favorite-btn.active {
+  background-color: #dc3545;
+  color: white;
+}
+
+.favorite-btn i {
+  margin-right: 5px;
+}
+
+.rating-container {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rating-stars {
+  display: flex;
+  gap: 5px;
+}
+
+.rating-stars.small {
+  font-size: 0.8rem;
+}
+
+.rating-star {
+  cursor: pointer;
+  font-size: 1.5rem;
+  color: #6c757d;
+  transition: color 0.3s ease;
+}
+
+.rating-star:hover,
+.rating-star.text-warning {
+  color: #ffc107;
+}
+
+.rating-info {
+  font-size: 0.9rem;
+  color: #adb5bd;
+}
+
+.average-rating {
+  font-weight: bold;
+  color: #ffc107;
+}
+
+.comments-section {
+  border-top: 1px solid #2f2f2f;
+  padding-top: 20px;
+}
+
+.comment {
+  border: 1px solid #2f2f2f;
+  transition: transform 0.3s ease;
+}
+
+.comment:hover {
+  transform: translateX(5px);
+}
+
+.comment-form textarea {
+  background-color: #2f2f2f;
+  border: 1px solid #3f3f3f;
+  color: white;
+}
+
+.comment-form textarea:focus {
+  background-color: #2f2f2f;
+  border-color: #0d6efd;
+  color: white;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.delete-comment {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.comment:hover .delete-comment {
+  opacity: 1;
+}
