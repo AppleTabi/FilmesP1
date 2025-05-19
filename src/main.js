@@ -7,6 +7,8 @@ let allFilms = [];
 let filteredFilms = [];
 let favoriteFilms = [];
 let filteredFavoriteFilms = [];
+let selectedUserId = null;
+let chatInterval = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById("filmForm");
@@ -31,8 +33,46 @@ document.addEventListener('DOMContentLoaded', () => {
   const savedUser = localStorage.getItem('user');
   if (savedUser) {
     currentUser = JSON.parse(savedUser);
+    // Load all user-specific data
+    loadUserData();
   }
   updateUI();
+
+  async function loadUserData() {
+    await Promise.all([
+      loadFilms(),
+      loadFavorites(),
+      loadWatchHistory(),
+      loadChatUsers()
+    ]);
+  }
+
+  async function loadChatUsers() {
+    if (!currentUser) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/chat/users`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load chat users');
+      }
+
+      const data = await response.json();
+      if (!data.users) {
+        console.error('Invalid response format:', data);
+        return;
+      }
+
+      renderChatUsers(data.users);
+      updateUnreadBadge(data.users);
+    } catch (error) {
+      console.error('Error loading chat users:', error);
+    }
+  }
 
   loginBtn.addEventListener('click', () => {
     loginModal.show();
@@ -123,20 +163,22 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleLogin(user) {
     currentUser = user;
     updateUI();
-    loadFavorites();
-    loadFilms();
+    loadUserData();
   }
 
   function updateUI() {
     const favoritesTabContainer = document.getElementById('favorites-tab-container');
+    const historyTabContainer = document.getElementById('history-tab-container');
+    const chatTabContainer = document.getElementById('chat-tab-container');
+    
     if (currentUser) {
       loginBtn.style.display = 'none';
       registerBtn.style.display = 'none';
       showFormBtn.style.display = 'block';
       logoutBtn.style.display = 'block';
-      if (favoritesTabContainer) {
-        favoritesTabContainer.style.display = 'block';
-      }
+      if (favoritesTabContainer) favoritesTabContainer.style.display = 'block';
+      if (historyTabContainer) historyTabContainer.style.display = 'block';
+      if (chatTabContainer) chatTabContainer.style.display = 'block';
       if (currentUser.role === 'admin') {
         adminPanelBtn.style.display = 'block';
       } else {
@@ -148,12 +190,13 @@ document.addEventListener('DOMContentLoaded', () => {
       showFormBtn.style.display = 'none';
       logoutBtn.style.display = 'none';
       adminPanelBtn.style.display = 'none';
-      if (favoritesTabContainer) {
-        favoritesTabContainer.style.display = 'none';
-        const favoritesTab = document.getElementById('favorites-tab');
-        if (favoritesTab && favoritesTab.classList.contains('active')) {
-          document.getElementById('all-films-tab').click();
-        }
+      if (favoritesTabContainer) favoritesTabContainer.style.display = 'none';
+      if (historyTabContainer) historyTabContainer.style.display = 'none';
+      if (chatTabContainer) chatTabContainer.style.display = 'none';
+      
+      const activeTab = document.querySelector('.nav-link.active');
+      if (activeTab && ['favorites-tab', 'history-tab', 'chat-tab'].includes(activeTab.id)) {
+        document.getElementById('all-films-tab').click();
       }
     }
   }
@@ -252,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
               ${film.video ? `
                 <div class="mt-4">
-                  <video controls class="w-100">
+                  <video controls class="w-100" id="videoPlayer${film.id}">
                     <source src="http://localhost:3000/uploads/videos/${film.video}" type="video/mp4">
                   </video>
                 </div>` : ''}
@@ -295,6 +338,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const commentForm = modalElement.querySelector('.comment-form');
     const averageRatingSpan = modalElement.querySelector('.average-rating');
     const ratingCountSpan = modalElement.querySelector('.rating-count');
+    const videoPlayer = modalElement.querySelector(`#videoPlayer${film.id}`);
+
+    if (videoPlayer && currentUser) {
+      let hasStartedPlaying = false;
+      
+      videoPlayer.addEventListener('play', async () => {
+        if (!hasStartedPlaying) {
+          hasStartedPlaying = true;
+          try {
+            const response = await fetch(`${apiUrl}/watch-history/${film.id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+
+            if (!response.ok) {
+              throw new Error('Hiba a lejátszási előzmény mentésekor');
+            }
+
+            await loadWatchHistory();
+          } catch (error) {
+            console.error('Hiba a lejátszási előzmény kezelésekor:', error);
+          }
+        }
+      });
+    }
 
     // Értékelések betöltése
     loadRatings(film.id);
@@ -393,6 +463,15 @@ document.addEventListener('DOMContentLoaded', () => {
           ${newIsFavorite ? 'Eltávolítás a kedvencekből' : 'Kedvencekhez adás'}
         `;
       });
+    }
+
+    if (currentUser) {
+      fetch(`${apiUrl}/watch-history/${film.id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      }).catch(error => console.error('Hiba a lejátszási előzmény mentésekor:', error));
     }
   }
 
@@ -961,6 +1040,280 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (error) {
       console.error('Hiba a kedvencek kezelésekor:', error);
+    }
+  }
+
+  async function loadWatchHistory() {
+    if (!currentUser) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/watch-history`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Hiba a lejátszási előzmények betöltésekor');
+      }
+
+      const data = await response.json();
+      if (!data.history || !Array.isArray(data.history)) {
+        console.error('Érvénytelen válasz formátum:', data);
+        return;
+      }
+
+      renderWatchHistory(data.history);
+    } catch (error) {
+      console.error('Hiba a lejátszási előzmények betöltésekor:', error);
+    }
+  }
+
+  function renderWatchHistory(history) {
+    const historyList = document.getElementById('historyList');
+    if (!historyList) {
+      console.error('History list element not found');
+      return;
+    }
+
+    historyList.innerHTML = '';
+
+    if (!Array.isArray(history) || history.length === 0) {
+      historyList.innerHTML = '<div class="col-12"><p class="text-center text-white">Még nincsenek lejátszási előzmények.</p></div>';
+      return;
+    }
+
+    history.forEach(item => {
+      if (!item || !item.Film) {
+        console.error('Invalid history item:', item);
+        return;
+      }
+
+      const col = document.createElement('div');
+      col.className = 'col-md-3 mb-4';
+
+      col.innerHTML = `
+        <div class="card h-100 text-white film-card history-item" role="button">
+          <img src="${apiUrl}/uploads/images/${item.Film.image}" class="card-img-top" alt="${item.Film.title}">
+          <div class="card-body">
+            <h5 class="card-title text-center">${item.Film.title}</h5>
+            <div class="watched-at">Megtekintve: ${new Date(item.watchedAt).toLocaleString()}</div>
+          </div>
+        </div>
+      `;
+
+      col.querySelector('.film-card').addEventListener('click', () => showFilmDetails(item.Film));
+      historyList.appendChild(col);
+    });
+  }
+
+  function renderChatUsers(users) {
+    const chatUsersList = document.getElementById('chatUsersList');
+    if (!chatUsersList) {
+      console.error('Chat users list element not found');
+      return;
+    }
+    
+    chatUsersList.innerHTML = '';
+
+    if (!Array.isArray(users) || users.length === 0) {
+      chatUsersList.innerHTML = '<div class="p-3 text-center text-white">Nincsenek elérhető felhasználók.</div>';
+      return;
+    }
+
+    users.forEach(user => {
+      if (!user || typeof user !== 'object') {
+        console.error('Invalid user object:', user);
+        return;
+      }
+
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = `list-group-item list-group-item-action ${user.id === selectedUserId ? 'active' : ''}`;
+      item.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+          <span>${user.name || 'Névtelen felhasználó'}</span>
+          ${(user.unreadCount > 0) ? `<span class="unread-badge">${user.unreadCount}</span>` : ''}
+        </div>
+      `;
+
+      item.addEventListener('click', () => selectChatUser(user));
+      chatUsersList.appendChild(item);
+    });
+  }
+
+  function updateUnreadBadge(users) {
+    const badge = document.getElementById('unreadMessagesBadge');
+    if (!badge) {
+      console.error('Unread messages badge element not found');
+      return;
+    }
+
+    const totalUnread = Array.isArray(users) ? 
+      users.reduce((sum, user) => sum + (user.unreadCount || 0), 0) : 0;
+    
+    if (totalUnread > 0) {
+      badge.textContent = totalUnread;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  async function selectChatUser(user) {
+    selectedUserId = user.id;
+    document.getElementById('chatHeader').textContent = `Chat: ${user.name}`;
+    document.getElementById('chatForm').style.display = 'block';
+    
+    document.querySelectorAll('#chatUsersList .list-group-item').forEach(item => {
+      item.classList.remove('active');
+    });
+    
+    const userButton = Array.from(document.querySelectorAll('#chatUsersList .list-group-item'))
+      .find(item => item.textContent.includes(user.name));
+    if (userButton) {
+      userButton.classList.add('active');
+    }
+
+    await loadChatMessages(user.id);
+    
+    if (chatInterval) {
+      clearInterval(chatInterval);
+    }
+    chatInterval = setInterval(() => loadChatMessages(user.id), 3000);
+  }
+
+  async function loadChatMessages(userId) {
+    if (!currentUser || !userId) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/chat/messages/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Hiba történt az üzenetek betöltésekor');
+      }
+
+      const messages = await response.json();
+      if (!Array.isArray(messages)) {
+        console.error('Invalid messages format:', messages);
+        return;
+      }
+
+      renderChatMessages(messages);
+    } catch (error) {
+      console.error('Hiba a chat üzenetek betöltésekor:', error);
+    }
+  }
+
+  function renderChatMessages(messages) {
+    const chatMessages = document.getElementById('chatMessages');
+    if (!chatMessages) {
+      console.error('Chat messages container not found');
+      return;
+    }
+
+    chatMessages.innerHTML = '';
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      chatMessages.innerHTML = '<div class="text-center text-white">Nincsenek üzenetek.</div>';
+      return;
+    }
+
+    messages.forEach(message => {
+      if (!message || !message.sender || !message.sender.name) {
+        console.error('Invalid message format:', message);
+        return;
+      }
+
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${message.senderId === currentUser.id ? 'sent' : 'received'}`;
+      
+      messageDiv.innerHTML = `
+        <div class="sender">${message.sender.name}</div>
+        <div class="content">${message.content}</div>
+        <div class="time">${new Date(message.createdAt).toLocaleString()}</div>
+      `;
+
+      chatMessages.appendChild(messageDiv);
+    });
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  document.getElementById('chatForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentUser || !selectedUserId) return;
+
+    const input = document.getElementById('messageInput');
+    const content = input.value.trim();
+    
+    if (!content) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/chat/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          receiverId: selectedUserId,
+          content
+        })
+      });
+
+      if (response.ok) {
+        input.value = '';
+        await loadChatMessages(selectedUserId);
+      }
+    } catch (error) {
+      console.error('Hiba az üzenet küldésekor:', error);
+    }
+  });
+
+  async function sendChatMessage() {
+    if (!selectedChatUser) return;
+    
+    const messageInput = document.getElementById('chatMessageInput');
+    const message = messageInput.value.trim();
+    
+    if (!message) return;
+    
+    try {
+        const response = await fetch('/chat/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                receiverId: selectedChatUser.id,
+                message
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to send message');
+        }
+
+        const data = await response.json();
+        if (!data || !data.message) {
+            throw new Error('Invalid response from server');
+        }
+
+        const messages = await loadChatMessages(selectedChatUser.id);
+        renderChatMessages(messages);
+        
+        messageInput.value = '';
+        
+        updateUnreadCount(selectedChatUser.id, 0);
+    } catch (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message. Please try again.');
     }
   }
 

@@ -1,6 +1,7 @@
 const mysql = require('mysql2/promise');
 const fs = require('fs').promises;
 const path = require('path');
+const { Sequelize } = require('sequelize');
 
 async function initializeDatabase() {
     try {
@@ -14,6 +15,15 @@ async function initializeDatabase() {
 
         await connection.query('CREATE DATABASE IF NOT EXISTS filmfeltolto');
         console.log('Adatbázis létrehozva vagy már létezik: filmfeltolto');
+
+        const sequelize = new Sequelize('filmfeltolto', 'root', '', {
+            host: 'localhost',
+            dialect: 'mysql',
+            logging: false
+        });
+
+        await sequelize.sync({ force: true });
+        console.log('Adatbázis táblák újra létrehozva');
 
         const uploadDirs = [
             path.join(__dirname, 'uploads'),

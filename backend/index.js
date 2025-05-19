@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
-const { Sequelize, DataTypes } = require('sequelize');
+const { Sequelize, DataTypes, Op } = require('sequelize');
 const jwt = require('jsonwebtoken');
 const auth = require('./middleware/auth.js');
 const fs = require('fs');
@@ -193,6 +193,69 @@ const Comment = sequelize.define('Comment', {
   timestamps: true
 });
 
+const WatchHistory = sequelize.define('WatchHistory', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  filmId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  watchedAt: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'WatchHistory',
+  timestamps: false
+});
+
+const ChatMessage = sequelize.define('ChatMessage', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  senderId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  receiverId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  content: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  isRead: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  }
+}, {
+  tableName: 'ChatMessages',
+  timestamps: true
+});
+
+ChatMessage.belongsTo(User, { as: 'sender', foreignKey: 'senderId' });
+ChatMessage.belongsTo(User, { as: 'receiver', foreignKey: 'receiverId' });
+User.hasMany(ChatMessage, { as: 'sentMessages', foreignKey: 'senderId' });
+User.hasMany(ChatMessage, { as: 'receivedMessages', foreignKey: 'receiverId' });
+
 Film.hasMany(Rating, { foreignKey: 'filmId' });
 Rating.belongsTo(Film, { foreignKey: 'filmId' });
 
@@ -210,6 +273,12 @@ Favorite.belongsTo(Film, { foreignKey: 'filmId' });
 
 User.hasMany(Favorite, { foreignKey: 'userId' });
 Favorite.belongsTo(User, { foreignKey: 'userId' });
+
+User.hasMany(WatchHistory, { foreignKey: 'userId' });
+WatchHistory.belongsTo(User, { foreignKey: 'userId' });
+
+Film.hasMany(WatchHistory, { foreignKey: 'filmId' });
+WatchHistory.belongsTo(Film, { foreignKey: 'filmId' });
 
 const initDatabase = async () => {
   try {
@@ -721,6 +790,183 @@ app.delete('/comments/:commentId', auth(['user', 'moderator', 'admin']), async (
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Hiba történt a komment törlésekor' });
+  }
+});
+
+app.post('/watch-history/:filmId', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { filmId } = req.params;
+    const userId = req.user.id;
+
+    const film = await Film.findByPk(filmId);
+    if (!film) {
+      return res.status(404).json({ error: 'A film nem található' });
+    }
+
+    const [watchHistory, created] = await WatchHistory.findOrCreate({
+      where: { userId, filmId },
+      defaults: { watchedAt: new Date() }
+    });
+
+    if (!created) {
+      await watchHistory.update({ watchedAt: new Date() });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error in watch-history POST:', error);
+    res.status(500).json({ error: 'Hiba történt a lejátszási előzmény mentésekor' });
+  }
+});
+
+app.get('/watch-history', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const history = await WatchHistory.findAll({
+      where: { userId },
+      include: [{
+        model: Film,
+        attributes: ['id', 'title', 'description', 'image', 'category', 'time'],
+        include: [{
+          model: User,
+          attributes: ['name', 'email']
+        }]
+      }],
+      order: [['watchedAt', 'DESC']]
+    });
+
+    res.json({ history });
+  } catch (error) {
+    console.error('Error in watch-history GET:', error);
+    res.status(500).json({ error: 'Hiba történt a lejátszási előzmények lekérdezésekor' });
+  }
+});
+
+app.post('/chat/messages', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { receiverId, content } = req.body;
+    const senderId = req.user.id;
+
+    const message = await ChatMessage.create({
+      senderId,
+      receiverId,
+      content
+    });
+
+    const messageWithUsers = await ChatMessage.findByPk(message.id, {
+      include: [
+        { model: User, as: 'sender', attributes: ['name'] },
+        { model: User, as: 'receiver', attributes: ['name'] }
+      ]
+    });
+
+    res.status(201).json(messageWithUsers);
+  } catch (error) {
+    res.status(500).json({ error: 'Hiba történt az üzenet küldésekor' });
+  }
+});
+
+app.get('/chat/messages/:userId', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserId = req.user.id;
+
+    const otherUser = await User.findByPk(userId);
+    if (!otherUser) {
+      return res.status(404).json({ error: 'Felhasználó nem található' });
+    }
+
+    const messages = await ChatMessage.findAll({
+      where: {
+        [Op.or]: [
+          { senderId: currentUserId, receiverId: userId },
+          { senderId: userId, receiverId: currentUserId }
+        ]
+      },
+      include: [
+        { model: User, as: 'sender', attributes: ['name'] },
+        { model: User, as: 'receiver', attributes: ['name'] }
+      ],
+      order: [['createdAt', 'ASC']]
+    });
+
+    await ChatMessage.update(
+      { isRead: true },
+      {
+        where: {
+          senderId: userId,
+          receiverId: currentUserId,
+          isRead: false
+        }
+      }
+    );
+
+    res.json(Array.isArray(messages) ? messages : []);
+  } catch (error) {
+    console.error('Error in chat messages GET:', error);
+    res.status(500).json({ 
+      error: 'Hiba történt az üzenetek lekérdezésekor',
+      details: error.message 
+    });
+  }
+});
+
+app.get('/chat/users', auth(['user', 'moderator', 'admin']), async (req, res) => {
+  try {
+    console.log('=== Chat Users Endpoint Start ===');
+    const currentUserId = req.user.id;
+    console.log('Current user ID:', currentUserId);
+
+    const users = await User.findAll({
+      where: {
+        id: { [Op.ne]: currentUserId },
+        isActive: true
+      },
+      attributes: ['id', 'name', 'email']
+    });
+
+    console.log('Found users:', users.length);
+
+    const unreadCounts = await ChatMessage.findAll({
+      where: {
+        receiverId: currentUserId,
+        isRead: false
+      },
+      attributes: [
+        'senderId',
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'unreadCount']
+      ],
+      group: ['senderId']
+    });
+
+    const unreadCountMap = unreadCounts.reduce((map, item) => {
+      map[item.senderId] = parseInt(item.getDataValue('unreadCount'));
+      return map;
+    }, {});
+
+    const usersWithUnreadCounts = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      unreadCount: unreadCountMap[user.id] || 0
+    }));
+
+    console.log('=== Chat Users Endpoint Success ===');
+    res.json({ users: usersWithUnreadCounts });
+
+  } catch (error) {
+    console.error('=== Chat Users Endpoint Error ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Full error:', error);
+    console.error('Stack trace:', error.stack);
+    console.error('=== End Error Log ===');
+
+    res.status(500).json({ 
+      error: 'Hiba történt a felhasználók lekérdezésekor',
+      details: error.message,
+      type: error.constructor.name
+    });
   }
 });
 
